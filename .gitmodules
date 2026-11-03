@@ -1,0 +1,60 @@
+[submodule "core"]
+	path = repos/core
+	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-core.git
+	branch = main
+	update = none
+	ignore = all
+	category = core
+	churn = low
+	stack = Spring Boot, PostgreSQL+TimescaleDB, Flyway, outbox/Debezium CDC, RabbitMQ
+	description = System of record: domains, mailboxes, IPs, deliverability telemetry
+[submodule "web"]
+	path = repos/web
+	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-web.git
+	branch = main
+	update = none
+	ignore = all
+	category = frontend
+	churn = medium
+	stack = Spring Boot, Thymeleaf, Vue 3 islands (Vite)
+	description = Customer app (app.aerosend.io)
+[submodule "ancillary"]
+	path = repos/ancillary
+	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-ancillary.git
+	branch = main
+	update = none
+	ignore = all
+	category = ancillary
+	churn = high
+	stack = Spring Boot, Spring AMQP (RabbitMQ), Postgres replica
+	description = Sequencer integrations, burn alerts, warmup sync, webhooks, free tools
+[submodule "admin"]
+	path = repos/admin
+	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-admin.git
+	branch = main
+	update = none
+	ignore = all
+	category = admin
+	churn = high
+	stack = Spring Boot, Thymeleaf, Spring Security, Postgres replica
+	description = Internal back office: customers, IP pools, resellers
+[submodule "internal-tools"]
+	path = repos/internal-tools
+	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-internal-tools.git
+	branch = main
+	update = none
+	ignore = all
+	category = internal-tools
+	churn = medium
+	stack = Go (aeroctl CLI), Vue 3 (ops dashboard)
+	description = Ops CLI and ops dashboard
+[submodule "utils"]
+	path = repos/utils
+	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-utils.git
+	branch = main
+	update = none
+	ignore = all
+	category = utils
+	churn = medium
+	stack = Python 3.12, psycopg, TimescaleDB SQL
+	description = Data scripts, backfills, deliverability analysis

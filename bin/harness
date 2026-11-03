@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# harness — attach Aerosend repos as submodules only while you work on them.
+#
+# Every repo is registered in .gitmodules (with update = none), so a clone of the
+# harness is tiny and `git submodule update --init` pulls nothing. `harness attach`
+# checks a repo out under repos/<name> on its default branch; `harness detach`
+# removes the working tree again (the clone is kept in .git/modules for fast re-attach).
+#
+# Written for the bash 3.2 that ships with macOS: no associative arrays, no mapfile.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+# Local dummy remotes are plain paths; git refuses those for submodules unless allowed.
+GIT=(git -c protocol.file.allow=always)
+
+bold() { printf '\033[1m%s\033[0m' "$*"; }
+dim()  { printf '\033[2m%s\033[0m' "$*"; }
+die()  { echo "harness: $*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# .gitmodules is the manifest. Extra keys (category, churn, stack, description)
+# are ignored by git but read here.
+# ---------------------------------------------------------------------------
+all_names() {
+  git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | sed -E 's/^submodule\.(.*)\.path .*/\1/'
+}
+meta()        { git config -f .gitmodules --get "submodule.$1.$2" 2>/dev/null || true; }
+path_of()     { meta "$1" path; }
+branch_of()   { local b; b="$(meta "$1" branch)"; echo "${b:-main}"; }
+is_known()    { [ -n "$(path_of "$1")" ]; }
+is_attached() { [ -e "$(path_of "$1")/.git" ]; }
+
+attached_names() {
+  local n
+  for n in $(all_names); do is_attached "$n" && echo "$n"; done
+  return 0
+}
+
+resolve_targets() {
+  # Expands args (names, --all, --category <c>) into repo names.
+  local out=() n
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --all) out+=($(all_names)) ;;
+      --category)
+        [ $# -ge 2 ] || die "--category needs a value"
+        for n in $(all_names); do [ "$(meta "$n" category)" = "$2" ] && out+=("$n"); done
+        shift ;;
+      -*) die "unknown option $1" ;;
+      *) is_known "$1" || die "unknown repo '$1' (see: harness list)"; out+=("$1") ;;
+    esac
+    shift
+  done
+  [ ${#out[@]} -gt 0 ] || die "no repos given"
+  printf '%s\n' "${out[@]}" | awk '!seen[$0]++'
+}
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+cmd_list() {
+  printf '%-16s %-15s %-7s %-9s %s\n' REPO CATEGORY CHURN STATE STACK
+  local n state
+  for n in $(all_names); do
+    if is_attached "$n"; then state="attached"; else state="-"; fi
+    printf '%-16s %-15s %-7s %-9s %s\n' "$n" "$(meta "$n" category)" "$(meta "$n" churn)" "$state" "$(meta "$n" stack)"
+  done
+}
+
+cmd_attach() {
+  local targets n p b
+  targets="$(resolve_targets "$@")"
+  for n in $targets; do
+    p="$(path_of "$n")"; b="$(branch_of "$n")"
+    if is_attached "$n"; then
+      echo "$(bold "$n") already attached at $p"
+      continue
+    fi
+    echo "Attaching $(bold "$n") → $p"
+    "${GIT[@]}" submodule init -q -- "$p"
+    # --checkout overrides update=none for this one path; --remote takes the tip of $b
+    # instead of the gitlink the harness happens to record.
+    "${GIT[@]}" submodule update -q --checkout --remote -- "$p"
+    # Leave the developer on a real branch, not a detached HEAD.
+    (
+      cd "$p"
+      if git show-ref -q --verify "refs/heads/$b"; then
+        git switch -q "$b"
+        git merge -q --ff-only "origin/$b" 2>/dev/null || echo "  $(dim "note: local $b has diverged from origin/$b, left as is")"
+      else
+        git switch -q -c "$b" --track "origin/$b"
+      fi
+    )
+  done
+  cmd_workspace >/dev/null
+  echo "Updated aerosend.code-workspace (open it in Cursor)."
+}
+
+unsafe_to_detach() {
+  # Prints the reasons a repo has work that would be lost (empty = safe).
+  local p="$1"
+  (
+    cd "$p"
+    [ -z "$(git status --porcelain)" ] || echo "uncommitted changes"
+    [ -z "$(git log --branches --not --remotes --oneline)" ] || echo "commits not pushed to any remote"
+    [ -z "$(git stash list)" ] || echo "stash entries"
+  )
+}
+
+cmd_detach() {
+  local force=0 args=() targets n p reasons
+  for a in "$@"; do
+    if [ "$a" = "--force" ]; then force=1; else args+=("$a"); fi
+  done
+  [ ${#args[@]} -gt 0 ] || die "usage: harness detach <repo...>|--all [--force]"
+  targets="$(resolve_targets "${args[@]}")"
+  for n in $targets; do
+    p="$(path_of "$n")"
+    is_attached "$n" || { echo "$(bold "$n") is not attached"; continue; }
+    reasons="$(unsafe_to_detach "$p")"
+    if [ -n "$reasons" ] && [ $force -eq 0 ]; then
+      echo "$(bold "$n") NOT detached: $(echo "$reasons" | paste -sd ',' - | sed 's/,/, /g'). Use --force to detach anyway." >&2
+      continue
+    fi
+    # Note: deinit keeps .git/modules/<name>, so local branches/commits survive a --force detach.
+    git submodule deinit -q -f -- "$p"
+    echo "Detached $(bold "$n")"
+  done
+  cmd_workspace >/dev/null
+}
+
+cmd_status() {
+  local any=0 n p
+  for n in $(attached_names); do
+    any=1; p="$(path_of "$n")"
+    (
+      cd "$p"
+      local br up ab dirty
+      br="$(git branch --show-current)"; br="${br:-(detached)}"
+      up="$(git rev-parse --abbrev-ref '@{u}' 2>/dev/null || true)"
+      ab=""
+      if [ -n "$up" ]; then
+        set -- $(git rev-list --left-right --count "HEAD...$up")
+        ab="↑$1 ↓$2"
+      fi
+      dirty="$(git status --porcelain | wc -l | tr -d ' ')"
+      printf '%-16s %-28s %-9s %s\n' "$n" "$br" "$ab" "$([ "$dirty" = 0 ] && echo clean || echo "$dirty changed")"
+    )
+  done
+  [ $any -eq 1 ] || echo "No repos attached. Try: harness attach <repo>   (harness list)"
+}
+
+cmd_sync() {
+  # Fetch every attached repo; fast-forward those sitting clean on their default branch.
+  local n p b
+  for n in $(attached_names); do
+    p="$(path_of "$n")"; b="$(branch_of "$n")"
+    (
+      cd "$p"
+      git fetch -q origin
+      if [ "$(git branch --show-current)" = "$b" ] && [ -z "$(git status --porcelain)" ]; then
+        git merge -q --ff-only "origin/$b" && echo "$n: fast-forwarded $b" || echo "$n: $b diverged, not merged"
+      else
+        echo "$n: fetched (on $(git branch --show-current), not touching)"
+      fi
+    )
+  done
+}
+
+cmd_exec() {
+  [ $# -gt 0 ] || die "usage: harness exec <command...>"
+  local n
+  for n in $(attached_names); do
+    echo "── $(bold "$n")"
+    (cd "$(path_of "$n")" && "$@") || echo "$(dim "($n: exit $?)")"
+  done
+}
+
+cmd_workspace() {
+  # Multi-root workspace for Cursor: the harness itself + every attached repo.
+  local f="$ROOT/aerosend.code-workspace" n
+  {
+    echo '{'
+    echo '  "folders": ['
+    echo '    { "name": "harness", "path": "." }'
+    for n in $(attached_names); do
+      printf '    ,{ "name": "%s", "path": "%s" }\n' "$n" "$(path_of "$n")"
+    done
+    echo '  ],'
+    echo '  "settings": {'
+    echo '    "files.exclude": { "repos": true },'
+    echo '    "git.detectSubmodules": true'
+    echo '  }'
+    echo '}'
+  } > "$f"
+  echo "$f"
+}
+
+cmd_set_remote_base() {
+  # e.g. harness set-remote-base git@github.com:aerosend
+  [ $# -eq 1 ] || die "usage: harness set-remote-base <base-url>"
+  local base="${1%/}" n url
+  for n in $(all_names); do
+    url="$base/$(basename "$(meta "$n" url)")"
+    git config -f .gitmodules "submodule.$n.url" "$url"
+    echo "$n → $url"
+  done
+  git submodule sync -q
+  echo "Rewrote .gitmodules; commit it so everyone picks up the new remotes."
+}
+
+usage() {
+  cat <<EOF
+$(bold harness) — work on Aerosend repos as on-demand submodules
+
+  harness list                         all repos, category, churn, attached?
+  harness attach <repo...>             check out repos under repos/ on their default branch
+  harness attach --category <cat>      e.g. --category ancillary
+  harness attach --all
+  harness detach <repo...> [--force]   remove working tree (refuses if work would be lost)
+  harness status                       branch / ahead-behind / dirty for attached repos
+  harness sync                         fetch all attached; fast-forward clean default branches
+  harness exec <cmd...>                run a command in every attached repo
+  harness workspace                    regenerate aerosend.code-workspace for Cursor
+  harness set-remote-base <url>        point every submodule at a new host/org
+EOF
+}
+
+main() {
+  local cmd="${1:-help}"; shift || true
+  case "$cmd" in
+    list|ls)          cmd_list "$@" ;;
+    attach|add)       cmd_attach "$@" ;;
+    detach|rm)        cmd_detach "$@" ;;
+    status|st)        cmd_status "$@" ;;
+    sync)             cmd_sync "$@" ;;
+    exec)             cmd_exec "$@" ;;
+    workspace)        cmd_workspace "$@" ;;
+    set-remote-base)  cmd_set_remote_base "$@" ;;
+    help|-h|--help)   usage ;;
+    *) usage; exit 1 ;;
+  esac
+}
+
+main "$@"
