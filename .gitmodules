@@ -1,6 +1,6 @@
 [submodule "core"]
 	path = repos/core
-	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-core.git
+	url = https://github.com/qurioskill/aerosend-core.git
 	branch = main
 	update = none
 	ignore = all
@@ -10,7 +10,7 @@
 	description = System of record: domains, mailboxes, IPs, deliverability telemetry
 [submodule "web"]
 	path = repos/web
-	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-web.git
+	url = https://github.com/qurioskill/aerosend-web.git
 	branch = main
 	update = none
 	ignore = all
@@ -20,7 +20,7 @@
 	description = Customer app (app.aerosend.io)
 [submodule "ancillary"]
 	path = repos/ancillary
-	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-ancillary.git
+	url = https://github.com/qurioskill/aerosend-ancillary.git
 	branch = main
 	update = none
 	ignore = all
@@ -30,7 +30,7 @@
 	description = Sequencer integrations, burn alerts, warmup sync, webhooks, free tools
 [submodule "admin"]
 	path = repos/admin
-	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-admin.git
+	url = https://github.com/qurioskill/aerosend-admin.git
 	branch = main
 	update = none
 	ignore = all
@@ -40,7 +40,7 @@
 	description = Internal back office: customers, IP pools, resellers
 [submodule "internal-tools"]
 	path = repos/internal-tools
-	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-internal-tools.git
+	url = https://github.com/qurioskill/aerosend-internal-tools.git
 	branch = main
 	update = none
 	ignore = all
@@ -50,7 +50,7 @@
 	description = Ops CLI and ops dashboard
 [submodule "utils"]
 	path = repos/utils
-	url = /Users/madhavmalhotra/apps/mentorcruise/aerosend-remotes/aerosend-utils.git
+	url = https://github.com/qurioskill/aerosend-utils.git
 	branch = main
 	update = none
 	ignore = all
